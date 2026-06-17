@@ -198,7 +198,7 @@ body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink
 <div id="busy"><div class="spinner"></div><span id="busyMsg">Working…</span></div>
 
 <!-- In-app delete confirmation (replaces browser confirm popup) -->
-<div id="confirmDel" onclick="if(event.target===this)closeConfirm()">
+<div id="confirmDel">
   <div class="cd-card">
     <div class="cd-head">Delete entry?</div>
     <div class="cd-body">
@@ -206,8 +206,8 @@ body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink
       <strong id="cdSummary"></strong>
     </div>
     <div class="cd-actions">
-      <button class="btn btn-gray" onclick="closeConfirm()">Cancel</button>
-      <button class="btn btn-red" onclick="doDelete()">Delete</button>
+      <button type="button" class="btn btn-gray" id="cdCancel">Cancel</button>
+      <button type="button" class="btn btn-red" id="cdDelete">Delete</button>
     </div>
   </div>
 </div>
@@ -549,12 +549,14 @@ function saveEntry(){
 }
 
 // ── Delete (in-app confirmation, no browser popup) ──────
+var CONFIRM_OPENED_AT=0;
 function confirmDelete(id){
   var r=ALL.find(function(x){return String(x.entryId)===String(id);});
   DEL_ID=id;
   var sum=r ? (fmtDate(r.date)+(r.time?' '+r.time:'')+' \u00b7 '+(r.type||'')+(r.pilotInCommand?' \u00b7 '+r.pilotInCommand:'')) : '';
   document.getElementById('cdSummary').textContent=sum;
   document.getElementById('confirmDel').classList.add('show');
+  CONFIRM_OPENED_AT=Date.now();
 }
 function closeConfirm(){
   document.getElementById('confirmDel').classList.remove('show');
@@ -563,12 +565,22 @@ function closeConfirm(){
 function doDelete(){
   var id=DEL_ID;
   document.getElementById('confirmDel').classList.remove('show');
-  if(!id)return;
+  if(!id){ toast('Nothing selected to delete','err'); return; }
   busy(true,'Deleting…');
   api({action:'deleteFlight', id:id})
     .then(function(r){ busy(false); DEL_ID=''; if(r&&r.success){toast('Entry deleted');reload();} else toast('Error: '+((r&&r.error)||'could not delete'),'err'); })
     .catch(function(e){ busy(false); DEL_ID=''; toast(e.message,'err'); });
 }
+// Bind modal buttons in JS (more reliable on iOS than inline handlers).
+document.getElementById('cdCancel').addEventListener('click', closeConfirm);
+document.getElementById('cdDelete').addEventListener('click', doDelete);
+// Backdrop tap-to-dismiss — but ignore the "ghost click" from the same tap
+// that opened the dialog, which otherwise closes it instantly on iOS.
+document.getElementById('confirmDel').addEventListener('click', function(e){
+  if(e.target!==this) return;                       // only taps on the dark backdrop
+  if(Date.now()-CONFIRM_OPENED_AT < 450) return;    // not the opening gesture
+  closeConfirm();
+});
 
 // ── Silent refresh after a write ────────────────────────
 function reload(){
