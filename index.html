@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1e2d">
+<title>HBPD UAS — Flight Log</title>
+
+<!-- ============================================================ -->
+<!--  CONFIG — set these two values, then commit to your repo.    -->
+<!-- ============================================================ -->
+<script>
+  // Your deployed Apps Script web app /exec URL.
+  // After adding the API to Code.gs, redeploy the SAME deployment
+  // (Deploy > Manage deployments > edit > New version) to keep this URL.
+  var API_URL = 'https://script.google.com/macros/s/AKfycbxdTB6iNgjXVRjozj-VFBRiexhI0cmyIve2VBJopZiipyVm9UuBJ5ug7Uv0_btVAntN/exec';
+
+  // Google Maps key for address autocomplete. Leave as-is to reuse yours,
+  // but restrict it by HTTP referrer to your GitHub Pages domain (see README).
+  // Set to '' to disable autocomplete entirely (address becomes a plain field).
+  var MAPS_KEY = 'AIzaSyBQQyNh7Q_qIOQAjR7EIUpoqXRw8zGiWU0';
+</script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1c2b3a; --navy-d:#0f1e2d; --gold:#c8a84b; --gold-d:#a88c3a;
+  --blue:#1e4488; --green:#2e6b2e; --red:#8b1a1a; --line:#c8cdd6;
+  --bg:#e8eaed; --ink:#1c1c1c; --muted:#607080; --panel:#fff;
+}
+html{font-size:15px;-webkit-text-size-adjust:100%}
+body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink);
+  min-height:100vh;-webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+
+/* ── HEADER ─────────────────────────────────────────── */
+.appbar{position:sticky;top:0;z-index:40;background:var(--navy-d);color:#fff;
+  display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;
+  border-bottom:2px solid var(--gold);padding-top:env(safe-area-inset-top)}
+.appbar .seal{width:28px;height:28px;flex:0 0 28px;background:var(--gold);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:900;color:var(--navy-d)}
+.appbar .ttl{font-size:.86rem;font-weight:700;letter-spacing:.04em;line-height:1.1}
+.appbar .ttl small{display:block;font-size:.6rem;font-weight:400;color:#8da3ba;letter-spacing:.06em}
+.appbar .count{margin-left:auto;font-size:.66rem;color:#8da3ba;text-transform:uppercase;
+  letter-spacing:.06em;font-weight:700;white-space:nowrap}
+
+/* ── SCREENS ────────────────────────────────────────── */
+.screen{display:none}
+.screen.active{display:block}
+.wrap{max-width:760px;margin:0 auto;padding:12px}
+
+/* ── SEARCH / FILTER ────────────────────────────────── */
+.controls{position:sticky;top:52px;z-index:30;background:var(--bg);padding:10px 12px 8px;
+  max-width:760px;margin:0 auto}
+.search{display:flex;gap:8px;margin-bottom:8px}
+.search input{flex:1;height:42px;padding:0 12px;border:1px solid #b0bac4;border-radius:8px;
+  font-size:1rem;background:#fff;color:var(--ink)}
+.search input:focus{outline:2px solid var(--blue);outline-offset:-1px}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.filters select{height:38px;padding:0 8px;border:1px solid #b0bac4;border-radius:8px;
+  font-size:.86rem;background:#fff;color:var(--ink)}
+.filters select:focus{outline:2px solid var(--blue);outline-offset:-1px}
+
+/* ── ENTRY CARDS ────────────────────────────────────── */
+.list{padding:0 12px 90px}
+.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--navy);
+  border-radius:8px;padding:11px 12px;margin-bottom:9px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.card.t-mission{border-left-color:var(--blue)}
+.card.t-flight-training{border-left-color:var(--green)}
+.card.t-indoor-flight{border-left-color:var(--gold-d)}
+.card.t-ground-training{border-left-color:#5b2d8a}
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.card-date{font-size:.95rem;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
+.card-date span{font-weight:400;color:var(--muted);font-size:.8rem;margin-left:5px}
+.badge{display:inline-block;padding:2px 8px;font-size:.62rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.04em;border:1px solid;border-radius:3px;white-space:nowrap}
+.b-mission{background:#dbeafe;color:#1e3a8a;border-color:#93c5fd}
+.b-flight-training{background:#dcfce7;color:#14532d;border-color:#86efac}
+.b-indoor-flight{background:#fef9c3;color:#713f12;border-color:#fde047}
+.b-ground-training{background:#ede9fe;color:#3b0764;border-color:#c4b5fd}
+.card-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:.82rem;margin-bottom:9px}
+.card-grid dt{color:var(--muted);font-weight:700;font-size:.68rem;text-transform:uppercase;
+  letter-spacing:.04em;align-self:center}
+.card-grid dd{color:var(--ink);overflow:hidden;text-overflow:ellipsis}
+.card-desc{font-size:.82rem;color:#3a3a3a;line-height:1.4;margin-bottom:9px;
+  border-top:1px dashed #e0e3e8;padding-top:7px}
+.card-actions{display:flex;gap:8px}
+.card-actions .btn{flex:1}
+
+/* ── BUTTONS ────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:40px;padding:0 14px;font-size:.82rem;font-weight:700;cursor:pointer;
+  border:1px solid transparent;border-radius:8px;text-transform:uppercase;letter-spacing:.03em;
+  -webkit-tap-highlight-color:transparent;transition:filter .1s;font-family:inherit}
+.btn:active{filter:brightness(.92)}
+.btn-navy{background:var(--navy);color:#fff}
+.btn-gold{background:var(--gold);color:#1c1c1c}
+.btn-gray{background:#e0e4e8;color:var(--navy);border-color:#c2cad3}
+.btn-red{background:var(--red);color:#fff}
+.btn-ghost{background:#fff;color:var(--navy);border-color:#b0bac4}
+.btn-sm{min-height:34px;font-size:.74rem;padding:0 10px}
+
+/* ── FAB ────────────────────────────────────────────── */
+.fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:45;
+  height:54px;padding:0 20px 0 16px;border-radius:28px;border:none;cursor:pointer;
+  background:var(--gold);color:var(--navy-d);font-weight:800;font-size:.92rem;
+  display:flex;align-items:center;gap:7px;box-shadow:0 4px 14px rgba(15,30,45,.32);
+  text-transform:uppercase;letter-spacing:.03em}
+.fab:active{filter:brightness(.93)}
+.fab svg{width:20px;height:20px}
+
+/* ── FORM SCREEN ────────────────────────────────────── */
+.form-bar{position:sticky;top:0;z-index:40;background:var(--navy);color:#fff;
+  display:flex;align-items:center;gap:10px;height:52px;padding:0 8px 0 6px;
+  padding-top:env(safe-area-inset-top);border-bottom:2px solid var(--gold)}
+.form-bar .back{background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;
+  width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:8px}
+.form-bar .back:active{background:rgba(255,255,255,.12)}
+.form-bar .ft{font-size:.9rem;font-weight:700;letter-spacing:.03em}
+.form-bar .save{margin-left:auto}
+.form-body{max-width:760px;margin:0 auto;padding:12px 12px 110px}
+.sect{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:#fff;background:#2e4055;padding:6px 10px;border-radius:5px;margin:16px 0 10px}
+.sect:first-child{margin-top:2px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field.full{grid-column:1/-1}
+.field label{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.field label .req{color:var(--red)}
+.field input,.field select,.field textarea{height:44px;padding:0 11px;border:1px solid #b0bac4;
+  border-radius:8px;font-size:1rem;font-family:inherit;color:var(--ink);background:#fff;width:100%}
+.field textarea{height:auto;min-height:84px;padding:10px 11px;resize:vertical;line-height:1.4}
+.field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
+.checks{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.chk{display:flex;align-items:center;gap:8px;font-size:.86rem;padding:9px 11px;
+  border:1px solid #c2cad3;border-radius:8px;background:#fff;cursor:pointer}
+.chk input{width:19px;height:19px;accent-color:var(--blue);flex:0 0 19px}
+.chk.on{border-color:var(--blue);background:#f0f6ff}
+.form-foot{position:fixed;left:0;right:0;bottom:0;z-index:42;background:#fff;
+  border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  display:flex;gap:10px;max-width:760px;margin:0 auto}
+.form-foot .btn{flex:1}
+
+/* ── STATES ─────────────────────────────────────────── */
+.empty,.loading{text-align:center;padding:48px 20px;color:var(--muted)}
+.empty svg{width:48px;height:48px;opacity:.4;margin-bottom:12px}
+.empty p{font-size:.92rem;margin-bottom:4px}
+.empty small{font-size:.78rem}
+.spinner{width:34px;height:34px;border:4px solid #c8cdd6;border-top-color:var(--blue);
+  border-radius:50%;animation:rot .7s linear infinite;margin:0 auto 14px}
+@keyframes rot{to{transform:rotate(360deg)}}
+.loadmore{display:block;width:100%;margin:4px 0 0}
+
+/* ── TOAST ──────────────────────────────────────────── */
+#toast{position:fixed;left:50%;transform:transl(-50%,12px);bottom:calc(80px + env(safe-area-inset-bottom));
+  transform:translateX(-50%) translateY(12px);z-index:200;padding:11px 18px;border-radius:8px;
+  font-size:.82rem;font-weight:700;opacity:0;pointer-events:none;transition:all .25s;
+  max-width:88%;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{background:#1c3a1c;color:#9bf0ab}
+#toast.err{background:#3a1c1c;color:#ffb4b4}
+
+/* ── OVERLAY ────────────────────────────────────────── */
+#busy{position:fixed;inset:0;z-index:150;background:rgba(15,30,45,.55);
+  display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+#busy.show{display:flex}
+#busy .spinner{margin:0}
+#busy span{color:#c8d4e0;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+
+@media(min-width:560px){ .fgrid{gap:12px} }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+<div id="busy"><div class="spinner"></div><span id="busyMsg">Working…</span></div>
+
+<!-- ============================ LIST SCREEN ============================ -->
+<section id="listScreen" class="screen active">
+  <header class="appbar">
+    <div class="seal">HBPD</div>
+    <div class="ttl">Flight Log<small>UAS Drone Program</small></div>
+    <div class="count" id="hdrCount">—</div>
+  </header>
+
+  <div class="controls">
+    <div class="search">
+      <input id="q" type="search" placeholder="Search date, pilot, DR#, address…" oninput="debouncedFilter()">
+    </div>
+    <div class="filters">
+      <select id="fType" onchange="applyFilters()">
+        <option value="All">All types</option>
+        <option>Mission</option><option>Flight Training</option>
+        <option>Indoor Flight</option><option>Ground Training</option>
+      </select>
+      <select id="fPilot" onchange="applyFilters()">
+        <option value="All">All pilots</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="list" id="list">
+    <div class="loading"><div class="spinner"></div>Loading flight log…</div>
+  </div>
+
+  <button class="fab" onclick="openNew()">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+    New Entry
+  </button>
+</section>
+
+<!-- ============================ FORM SCREEN ============================ -->
+<section id="formScreen" class="screen">
+  <header class="form-bar">
+    <button class="back" onclick="showList()" aria-label="Back">‹</button>
+    <span class="ft" id="formTitle">New Flight Entry</span>
+    <button class="btn btn-gold btn-sm save" onclick="saveEntry()">Save</button>
+  </header>
+
+  <div class="form-body">
+    <input type="hidden" id="fId">
+
+    <div class="sect">Flight information</div>
+    <div class="fgrid">
+      <div class="field"><label>Date <span class="req">*</span></label><input type="date" id="fDate"></div>
+      <div class="field"><label>Time <span class="req">*</span></label><input type="time" id="fTime"></div>
+      <div class="field full"><label>Entry type <span class="req">*</span></label>
+        <select id="fTypeIn">
+          <option value="" disabled selected>Select type…</option>
+          <option>Mission</option><option>Flight Training</option>
+          <option>Indoor Flight</option><option>Ground Training</option>
+        </select></div>
+      <div class="field full"><label>Aircraft</label>
+        <select id="fAircraft"><option value="">Select…</option></select></div>
+      <div class="field"><label>Pilot in command</label>
+        <select id="fPilotIn"><option value="">Select…</option></select></div>
+      <div class="field"><label>Visual observer</label><input type="text" id="fVO" placeholder="Last name"></div>
+      <div class="field"><label>Pre-flight checklist</label>
+        <select id="fPre"><option value="Yes">Yes — complete</option><option value="No">No</option><option value="N/A">N/A</option></select></div>
+      <div class="field"><label>Flight minutes</label><input type="number" id="fMins" min="0" inputmode="numeric" placeholder="0"></div>
+      <div class="field full"><label>DR / CN #</label><input type="text" id="fDR" placeholder="26-000000"></div>
+    </div>
+
+    <div class="sect">Mission address</div>
+    <div class="fgrid">
+      <div class="field full"><label>Street address</label>
+        <input type="text" id="fAddr" placeholder="Address, business, or intersection…" autocomplete="off"></div>
+      <div class="field full"><label>City</label><input type="text" id="fCity" value="Huntington Beach"></div>
+      <div class="field"><label>State</label><input type="text" id="fState" value="California"></div>
+      <div class="field"><label>ZIP</label><input type="text" id="fZip" inputmode="numeric"></div>
+    </div>
+
+    <div class="sect">Airspace &amp; authorization</div>
+    <div class="fgrid">
+      <div class="field full"><label>Airspace class</label>
+        <select id="fAirspace"><option>Class G</option><option>Class D</option><option>Class C</option><option>Class B</option></select></div>
+      <div class="field full"><label>Authorization</label></div>
+      <div class="checks" id="authChecks">
+        <label class="chk"><input type="checkbox" value="Part 107"> Part 107</label>
+        <label class="chk"><input type="checkbox" value="COA"> COA</label>
+        <label class="chk"><input type="checkbox" value="Airspace Waiver"> Airspace Waiver</label>
+        <label class="chk"><input type="checkbox" value="Night Waiver"> Night Waiver</label>
+        <label class="chk"><input type="checkbox" value="LAANC"> LAANC</label>
+        <label class="chk"><input type="checkbox" value="N/A"> N/A</label>
+      </div>
+      <div class="field full"><label>Authorization number</label><input type="text" id="fAuthNum"></div>
+    </div>
+
+    <div class="sect">Description</div>
+    <div class="fgrid">
+      <div class="field full"><label>Mission / training description</label>
+        <textarea id="fDesc" rows="4"></textarea></div>
+    </div>
+  </div>
+
+  <div class="form-foot">
+    <button class="btn btn-gray" onclick="showList()">Cancel</button>
+    <button class="btn btn-navy" onclick="saveEntry()">Save entry</button>
+  </div>
+</section>
+
+<script>
+// ── State ───────────────────────────────────────────────
+var ALL=[], FILT=[], PILOTS=[], AIRCRAFT=[], RENDER_LIMIT=50, KW_T;
+var TYPE_SLUG={ 'Mission':'mission','Flight Training':'flight-training',
+  'Indoor Flight':'indoor-flight','Ground Training':'ground-training' };
+
+// ── JSONP transport (GET-only, sidesteps Apps Script CORS) ──
+var _jc=0;
+function api(params){
+  return new Promise(function(resolve,reject){
+    var cb='jcb_'+(++_jc)+'_'+Date.now();
+    var s=document.createElement('script');
+    var done=false;
+    var timer=setTimeout(function(){ if(!done){cleanup();reject(new Error('Request timed out. Check API URL / deployment access.'));} },25000);
+    function cleanup(){ done=true; clearTimeout(timer); try{delete window[cb];}catch(e){window[cb]=undefined;} if(s.parentNode)s.parentNode.removeChild(s); }
+    window[cb]=function(data){ cleanup(); resolve(data); };
+    s.onerror=function(){ cleanup(); reject(new Error('Network error reaching the backend.')); };
+    var qs=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('&');
+    s.src=API_URL+'?'+qs+'&callback='+cb;
+    document.head.appendChild(s);
+  });
+}
+
+// ── UI helpers ──────────────────────────────────────────
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtDate(d){if(!d)return'';var p=String(d).split('T')[0].split('-');return p.length===3?p[1]+'/'+p[2]+'/'+p[0]:String(d);}
+var _tt;
+function toast(msg,type){var t=document.getElementById('toast');t.textContent=msg;t.className='show '+(type||'ok');clearTimeout(_tt);_tt=setTimeout(function(){t.className='';},3200);}
+function busy(on,msg){var b=document.getElementById('busy');document.getElementById('busyMsg').textContent=msg||'Working…';b.classList.toggle('show',!!on);}
+function showList(){document.getElementById('formScreen').classList.remove('active');document.getElementById('listScreen').classList.add('active');window.scrollTo(0,0);}
+function showForm(){document.getElementById('listScreen').classList.remove('active');document.getElementById('formScreen').classList.add('active');window.scrollTo(0,0);}
+
+// ── Boot ────────────────────────────────────────────────
+window.addEventListener('load',function(){
+  api({action:'getBootstrap'})
+    .then(function(d){
+      if(d&&d.error)throw new Error(d.error);
+      ALL=(d&&d.flights)||[]; PILOTS=(d&&d.pilots)||[]; AIRCRAFT=(d&&d.aircraft)||[];
+      fillPilotFilter(); fillFormSelects();
+      FILT=ALL.slice(); render();
+    })
+    .catch(function(e){
+      document.getElementById('list').innerHTML='<div class="empty">'+
+        '<p>Couldn\u2019t load the flight log.</p><small>'+esc(e.message)+'</small></div>';
+      toast(e.message,'err');
+    });
+});
+
+function fillPilotFilter(){
+  var sel=document.getElementById('fPilot');
+  PILOTS.filter(function(p){return p.status==='Active';})
+    .sort(function(a,b){return(a.lastName||'').localeCompare(b.lastName||'');})
+    .forEach(function(p){
+      var v=p.lastName||'';
+      sel.innerHTML+='<option value="'+esc(v)+'">'+esc((p.lastName||'')+', '+(p.firstName||''))+'</option>';
+    });
+}
+function fillFormSelects(){
+  var fp=document.getElementById('fPilotIn'), fa=document.getElementById('fAircraft');
+  PILOTS.filter(function(p){return p.status==='Active';})
+    .sort(function(a,b){return(a.lastName||'').localeCompare(b.lastName||'');})
+    .forEach(function(p){
+      var v=p.lastName||'';
+      fp.innerHTML+='<option value="'+esc(v)+'">'+esc((p.lastName||'')+', '+(p.firstName||''))+'</option>';
+    });
+  AIRCRAFT.filter(function(a){return a.status==='Active';})
+    .sort(function(a,b){return(a.model||'').localeCompare(b.model||'');})
+    .forEach(function(a){
+      var val=a.make+' '+a.model+' '+a.serialNumber, lbl=a.make+' '+a.model+' ('+a.serialNumber+')';
+      fa.innerHTML+='<option value="'+esc(val)+'">'+esc(lbl)+'</option>';
+    });
+}
+
+// ── Filtering ───────────────────────────────────────────
+function debouncedFilter(){clearTimeout(KW_T);KW_T=setTimeout(applyFilters,300);}
+function applyFilters(){
+  var k=document.getElementById('q').value.toLowerCase().trim();
+  var t=document.getElementById('fType').value;
+  var p=document.getElementById('fPilot').value;
+  FILT=ALL.filter(function(r){
+    if(t!=='All'&&r.type!==t)return false;
+    if(p!=='All'&&r.pilotInCommand!==p)return false;
+    if(k&&JSON.stringify(r).toLowerCase().indexOf(k)<0)return false;
+    return true;
+  });
+  RENDER_LIMIT=50; render();
+}
+
+// ── Render list ─────────────────────────────────────────
+function render(){
+  var hours=0; FILT.forEach(function(r){hours+=parseFloat(r.flightMinutes)||0;});
+  document.getElementById('hdrCount').textContent=FILT.length+' entries \u00b7 '+(hours/60).toFixed(1)+'h';
+
+  var el=document.getElementById('list');
+  if(!FILT.length){
+    el.innerHTML='<div class="empty">'+
+      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18v2H3zm0 5h18v2H3zm0 5h12v2H3z"/></svg>'+
+      '<p>No entries match.</p><small>Try clearing the search or filters.</small></div>';
+    return;
+  }
+  var slice=FILT.slice(0,RENDER_LIMIT), h='';
+  slice.forEach(function(r){
+    var slug=TYPE_SLUG[r.type]||'';
+    var addr=(r.address||'')+(r.city?' \u2014 '+r.city:'');
+    h+='<div class="card t-'+slug+'">';
+    h+='<div class="card-top">';
+    h+='<div class="card-date">'+esc(fmtDate(r.date))+'<span>'+esc(r.time||'')+'</span></div>';
+    h+='<span class="badge b-'+slug+'">'+esc(r.type||'')+'</span></div>';
+    h+='<dl class="card-grid">';
+    if(r.aircraft)        h+='<dt>Aircraft</dt><dd>'+esc(String(r.aircraft).split(' ').slice(0,3).join(' '))+'</dd>';
+    if(r.pilotInCommand)  h+='<dt>PIC</dt><dd>'+esc(r.pilotInCommand)+(r.visualObserver?' \u00b7 VO '+esc(r.visualObserver):'')+'</dd>';
+    if(addr.trim())       h+='<dt>Address</dt><dd>'+esc(addr)+'</dd>';
+    h+='<dt>Airspace</dt><dd>'+esc(r.airspace||'\u2014')+(r.flightMinutes?' \u00b7 '+esc(r.flightMinutes)+' min':'')+'</dd>';
+    if(r.drCn)            h+='<dt>DR / CN</dt><dd>'+esc(r.drCn)+'</dd>';
+    h+='</dl>';
+    if(r.description)     h+='<div class="card-desc">'+esc(r.description)+'</div>';
+    h+='<div class="card-actions">';
+    h+='<button class="btn btn-ghost btn-sm" data-act="edit" data-id="'+esc(r.entryId)+'">Edit</button>';
+    h+='<button class="btn btn-red btn-sm" data-act="del" data-id="'+esc(r.entryId)+'">Delete</button>';
+    h+='</div></div>';
+  });
+  if(FILT.length>RENDER_LIMIT){
+    h+='<button class="btn btn-gray loadmore" onclick="RENDER_LIMIT+=50;render();">'+
+       'Load more ('+(FILT.length-RENDER_LIMIT)+' remaining)</button>';
+  }
+  el.innerHTML=h;
+}
+
+// ── Card actions (delegated) ────────────────────────────
+document.getElementById('list').addEventListener('click',function(e){
+  var b=e.target.closest('[data-act]'); if(!b)return;
+  var id=b.getAttribute('data-id');
+  if(b.getAttribute('data-act')==='edit') openEdit(id);
+  else confirmDelete(id);
+});
+
+// ── Auth checkbox visual state ──────────────────────────
+document.getElementById('authChecks').addEventListener('change',function(e){
+  var lbl=e.target.closest('.chk'); if(lbl)lbl.classList.toggle('on',e.target.checked);
+});
+
+// ── New / Edit ──────────────────────────────────────────
+function setSelect(id,v){
+  var el=document.getElementById(id); if(!el)return;
+  if(v==null){el.selectedIndex=0;return;}
+  for(var i=0;i<el.options.length;i++){if(el.options[i].value===String(v)){el.selectedIndex=i;return;}}
+  var o=document.createElement('option');o.value=String(v);o.text=String(v);el.add(o);el.value=String(v);
+}
+function openNew(){
+  document.getElementById('formTitle').textContent='New Flight Entry';
+  document.getElementById('fId').value='';
+  var now=new Date();
+  document.getElementById('fDate').value=now.toISOString().slice(0,10);
+  document.getElementById('fTime').value=now.toTimeString().slice(0,5);
+  document.getElementById('fTypeIn').selectedIndex=0;
+  document.getElementById('fAircraft').selectedIndex=0;
+  document.getElementById('fPilotIn').selectedIndex=0;
+  document.getElementById('fPre').selectedIndex=0;
+  document.getElementById('fAirspace').selectedIndex=0;
+  ['fVO','fMins','fDR','fAddr','fZip','fAuthNum','fDesc'].forEach(function(i){document.getElementById(i).value='';});
+  document.getElementById('fCity').value='Huntington Beach';
+  document.getElementById('fState').value='California';
+  resetChecks([]);
+  showForm();
+}
+function openEdit(id){
+  var r=ALL.find(function(x){return String(x.entryId)===String(id);});
+  if(!r){toast('Entry not found','err');return;}
+  document.getElementById('formTitle').textContent='Edit Flight Entry';
+  document.getElementById('fId').value=r.entryId;
+  document.getElementById('fDate').value=r.date||'';
+  document.getElementById('fTime').value=r.time||'';
+  setSelect('fTypeIn',r.type);
+  setSelect('fAircraft',r.aircraft);
+  setSelect('fPilotIn',r.pilotInCommand);
+  document.getElementById('fVO').value=r.visualObserver||'';
+  setSelect('fPre',r.preflightComplete);
+  document.getElementById('fMins').value=r.flightMinutes||'';
+  document.getElementById('fDR').value=r.drCn||'';
+  document.getElementById('fAddr').value=r.address||'';
+  document.getElementById('fCity').value=r.city||'';
+  document.getElementById('fState').value=r.state||'';
+  document.getElementById('fZip').value=r.zip||'';
+  setSelect('fAirspace',r.airspace);
+  document.getElementById('fAuthNum').value=r.authorizationNumber||'';
+  document.getElementById('fDesc').value=r.description||'';
+  resetChecks((r.authorization||'').split(',').map(function(s){return s.trim();}));
+  showForm();
+}
+function resetChecks(active){
+  document.querySelectorAll('#authChecks .chk').forEach(function(lbl){
+    var cb=lbl.querySelector('input');
+    cb.checked=active.indexOf(cb.value)>=0;
+    lbl.classList.toggle('on',cb.checked);
+  });
+}
+
+// ── Save ────────────────────────────────────────────────
+function saveEntry(){
+  var date=document.getElementById('fDate').value;
+  var type=document.getElementById('fTypeIn').value;
+  if(!date){toast('Date is required','err');return;}
+  if(!type){toast('Entry type is required','err');return;}
+  var auths=[];
+  document.querySelectorAll('#authChecks input:checked').forEach(function(c){auths.push(c.value);});
+  var id=document.getElementById('fId').value;
+  var obj={
+    entryId:id||null, date:date, time:document.getElementById('fTime').value,
+    type:type, aircraft:document.getElementById('fAircraft').value,
+    preflightComplete:document.getElementById('fPre').value,
+    description:document.getElementById('fDesc').value,
+    address:document.getElementById('fAddr').value, city:document.getElementById('fCity').value,
+    state:document.getElementById('fState').value, zip:document.getElementById('fZip').value,
+    airspace:document.getElementById('fAirspace').value,
+    authorization:auths.join(', '), authorizationNumber:document.getElementById('fAuthNum').value,
+    pilotInCommand:document.getElementById('fPilotIn').value,
+    visualObserver:document.getElementById('fVO').value,
+    flightMinutes:document.getElementById('fMins').value||0,
+    drCn:document.getElementById('fDR').value,
+    maintenanceInspection:'',maintenanceBattery:'',maintenanceRotor:'',
+    maintenanceAttachments:'',maintenanceOther:'',maintenanceOtherDesc:''
+  };
+  busy(true, id?'Updating…':'Saving…');
+  api({action:id?'updateFlight':'addFlight', data:JSON.stringify(obj)})
+    .then(function(r){
+      busy(false);
+      if(r&&r.success){ toast(id?'Entry updated':'Entry saved'); showList(); reload(); }
+      else toast('Error: '+((r&&r.error)||'unknown'),'err');
+    })
+    .catch(function(e){ busy(false); toast(e.message,'err'); });
+}
+
+// ── Delete ──────────────────────────────────────────────
+function confirmDelete(id){
+  if(!confirm('Delete this flight entry? This cannot be undone.'))return;
+  busy(true,'Deleting…');
+  api({action:'deleteFlight', id:id})
+    .then(function(r){ busy(false); if(r&&r.success){toast('Entry deleted');reload();} else toast('Error deleting','err'); })
+    .catch(function(e){ busy(false); toast(e.message,'err'); });
+}
+
+// ── Silent refresh after a write ────────────────────────
+function reload(){
+  api({action:'getFlights'})
+    .then(function(d){ ALL=(d&&d.error)?ALL:(d||[]); applyFilters(); })
+    .catch(function(){ /* keep current list */ });
+}
+
+// ── Google Places autocomplete (optional) ───────────────
+function initAutocomplete(){
+  var input=document.getElementById('fAddr');
+  if(!input||!window.google||!google.maps||!google.maps.places)return;
+  var ac=new google.maps.places.Autocomplete(input,{
+    types:['geocode','establishment'], componentRestrictions:{country:'us'},
+    fields:['address_components','formatted_address','name','types']
+  });
+  ac.addListener('place_changed',function(){
+    var place=ac.getPlace(); if(!place)return;
+    var num='',route='',city='',state='',zip='';
+    (place.address_components||[]).forEach(function(c){
+      var t=c.types[0];
+      if(t==='street_number')num=c.long_name;
+      if(t==='route')route=c.long_name;
+      if(t==='locality')city=c.long_name;
+      if(t==='administrative_area_level_1')state=c.long_name;
+      if(t==='postal_code')zip=c.long_name;
+      if(t==='intersection')route=c.long_name;
+    });
+    var addr='';
+    var isX=place.types&&place.types.indexOf('intersection')>=0;
+    var isEst=place.types&&place.types.indexOf('establishment')>=0;
+    if(isX){ addr=(place.formatted_address||'').split(',')[0].trim(); }
+    else if(isEst&&place.name){ addr=place.name; if(num&&route)addr+=' \u2014 '+num+' '+route; }
+    else if(num||route){ addr=(num+' '+route).trim(); }
+    else if(place.formatted_address){ addr=place.formatted_address.split(',')[0].trim(); }
+    else if(place.name){ addr=place.name; }
+    if(addr)document.getElementById('fAddr').value=addr;
+    if(city)document.getElementById('fCity').value=city;
+    if(state)document.getElementById('fState').value=state;
+    if(zip)document.getElementById('fZip').value=zip;
+  });
+}
+window._gmapsReady=function(){ initAutocomplete(); };
+(function loadMaps(){
+  if(!MAPS_KEY)return;
+  var s=document.createElement('script');
+  s.src='https://maps.googleapis.com/maps/api/js?key='+MAPS_KEY+'&libraries=places&callback=_gmapsReady';
+  s.async=true; s.defer=true; document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
