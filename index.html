@@ -13,11 +13,13 @@
   // Your deployed Apps Script web app /exec URL.
   // After adding the API to Code.gs, redeploy the SAME deployment
   // (Deploy > Manage deployments > edit > New version) to keep this URL.
-var API_URL = 'https://script.google.com/macros/s/AKfycbwfHzkF_iuF4gI2OLRnEr0Iu8Aa7q9m13mG7burI0XGkc87OT6f3nvOGQrmsXURMeqc/exec';
-  
+  var API_URL = 'https://script.google.com/macros/s/AKfycbwfHzkF_iuF4gI2OLRnEr0Iu8Aa7q9m13mG7burI0XGkc87OT6f3nvOGQrmsXURMeqc/exec';
+
   // Google Maps key for address autocomplete. Leave as-is to reuse yours,
-  // but restrict it by HTTP referrer to your GitHub Pages domain (see README).
-  // Set to '' to disable autocomplete entirely (address becomes a plain field).
+  // To turn ON address autocomplete: (1) in Google Cloud Console add the HTTP
+  // referrer https://swhite005.github.io/* to this key's restrictions, then
+  // (2) paste the key below in place of ''. Until the domain is allow-listed the
+  // widget errors out and blocks typing, so it ships OFF (plain text field).
   var MAPS_KEY = 'AIzaSyBQQyNh7Q_qIOQAjR7EIUpoqXRw8zGiWU0';
 </script>
 
@@ -167,6 +169,14 @@ body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink
 #busy span{color:#c8d4e0;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
 
 @media(min-width:560px){ .fgrid{gap:12px} }
+
+/* Address autocomplete dropdown (only shown when MAPS_KEY is set) */
+.pac-container{font-family:Arial,Helvetica,sans-serif;border:1px solid #b0bac4;border-top:none;
+  border-radius:0 0 8px 8px;box-shadow:0 6px 16px rgba(0,0,0,.18);z-index:9999;background:#fff}
+.pac-item{padding:9px 11px;font-size:.9rem;cursor:pointer;border-top:1px solid #eef0f3;color:var(--ink)}
+.pac-item:hover,.pac-item-selected{background:#eef5ff}
+.pac-item-query{font-size:.9rem;font-weight:700;color:var(--navy)}
+.pac-icon{display:none}
 </style>
 </head>
 <body>
@@ -280,7 +290,7 @@ body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink
 
 <script>
 // ── State ───────────────────────────────────────────────
-var ALL=[], FILT=[], PILOTS=[], AIRCRAFT=[], RENDER_LIMIT=50, KW_T;
+var ALL=[], FILT=[], PILOTS=[], AIRCRAFT=[], RENDER_LIMIT=10, KW_T;
 var TYPE_SLUG={ 'Mission':'mission','Flight Training':'flight-training',
   'Indoor Flight':'indoor-flight','Ground Training':'ground-training' };
 
@@ -363,7 +373,7 @@ function applyFilters(){
     if(k&&JSON.stringify(r).toLowerCase().indexOf(k)<0)return false;
     return true;
   });
-  RENDER_LIMIT=50; render();
+  RENDER_LIMIT=10; render();
 }
 
 // ── Render list ─────────────────────────────────────────
@@ -400,8 +410,8 @@ function render(){
     h+='</div></div>';
   });
   if(FILT.length>RENDER_LIMIT){
-    h+='<button class="btn btn-gray loadmore" onclick="RENDER_LIMIT+=50;render();">'+
-       'Load more ('+(FILT.length-RENDER_LIMIT)+' remaining)</button>';
+    h+='<button class="btn btn-gray loadmore" onclick="RENDER_LIMIT+=10;render();">'+
+       'Load 10 more ('+(FILT.length-RENDER_LIMIT)+' remaining)</button>';
   }
   el.innerHTML=h;
 }
@@ -561,6 +571,12 @@ function initAutocomplete(){
   });
 }
 window._gmapsReady=function(){ initAutocomplete(); };
+// If the key isn't authorized for this domain, Google calls gm_authFailure.
+// Tear down the broken widget so the address field stays a normal text input.
+window.gm_authFailure=function(){
+  document.querySelectorAll('.pac-container').forEach(function(el){el.remove();});
+  toast('Address autocomplete unavailable — type the address manually','err');
+};
 (function loadMaps(){
   if(!MAPS_KEY)return;
   var s=document.createElement('script');
